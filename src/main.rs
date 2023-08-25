@@ -36,7 +36,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     "/repos" => {
                         println!("Bound repos");
 
-                        let pattern = Pattern::new(path_iter.next().map_or("*".to_string(), |q| format!("*{}*", q.to_lowercase())));
+                        let pattern = Pattern::new(path_iter.next().map_or("*".to_string(), |q| format!("*{}*", q.to_lowercase().replace('+', "*"))));
 
                         let repos = git_client
                             .repositories()
