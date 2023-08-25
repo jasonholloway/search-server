@@ -1,0 +1,11 @@
+[Unit]
+Description=A little server for searching AzDo via VimiumC
+After=network.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/search-server/env
+ExecStart=/usr/local/bin/search-server
+
+[Install]
+WantedBy=default.target
