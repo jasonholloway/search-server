@@ -1,0 +1,13 @@
+[package]
+name = "search-server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tiny_http = "0.9"
+azure_devops_rust_api = { version = "0.2.0", features = ["git"] }
+tokio = { version = "1", features = ["full"] }
+ascii = "1.0.0"
+wildflower = "0.3.0"
+
+
