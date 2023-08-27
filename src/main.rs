@@ -1,10 +1,11 @@
 extern crate tiny_http;
 
 use tiny_http::{Server, Response, Header, HeaderField};
-use azure_devops_rust_api::{git, auth::Credential};
+use azure_devops_rust_api::{auth::Credential, git, pipelines};
 use std::{error::Error, str::FromStr};
 use ascii::AsciiString;
 use wildflower::Pattern;
+use serde_json::Value;
 use std::env;
 
 struct Url(String);
@@ -22,8 +23,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let azdo_proj = env::var("SEARCH_SERVER_AZDO_PROJ").unwrap();
 
     let azdo_creds = Credential::from_pat(azdo_pat);
-
-    let git_client = git::operations::ClientBuilder::new(azdo_creds).build();
+    let git_client = git::operations::ClientBuilder::new(azdo_creds.clone()).build();
+    let pipeline_client = pipelines::operations::ClientBuilder::new(azdo_creds.clone()).build();
 
     println!("Listening at http://{}", addr);
 
@@ -34,8 +35,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
             if let Some(provider_name) = path_iter.next() {
                 match provider_name {
                     "/repos" => {
-                        println!("Bound repos");
-
                         let pattern = Pattern::new(path_iter.next().map_or("*".to_string(), |q| format!("*{}*", q.to_lowercase().replace('+', "*"))));
 
                         let repos = git_client
@@ -47,7 +46,29 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             .filter(|r| pattern.matches(&r.name.to_lowercase()))
                             .flat_map(|r| {
                                 r.web_url
-                                    .map(|url| Link(Url(url), Description(format!("{} - {}", azdo_proj, r.name))))
+                                    .map(|url| Link(Url(url), Description(format!("[{}] {}", azdo_proj, r.name))))
+                            })
+                            .collect()
+                    },
+                    "/pipelines" => {
+                        let pattern = Pattern::new(path_iter.next().map_or("*".to_string(), |q| format!("*{}*", q.to_lowercase().replace('+', "*"))));
+
+                        let pipelines = pipeline_client
+                            .pipelines()
+                            .list(&azdo_org, &azdo_proj)
+                            .into_future().await?.value;
+
+                        pipelines.into_iter()
+                            .filter(|p| pattern.matches(&p.name.to_lowercase()))
+                            .flat_map(|p| {
+                                println!("{}", p.links);
+                                
+                                if let Some(Value::String(url)) = p.links.get("web").and_then(|j| j.get("href")) {
+                                    Some(Link(Url(url.to_string()), Description(format!("[{}] {}\\{}", azdo_proj, p.folder, p.name).to_string())))
+                                }
+                                else {
+                                    None
+                                }
                             })
                             .collect()
                     },
@@ -70,7 +91,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     .with_status_code(301)
             }
             _ => {
-                let data = ["<!DOCTYPE html><html><ul>".to_string()].into_iter()
+                let data = ["<!DOCTYPE html><html><style>li { font-size: 20px; margin: 5px; }</style><ul>".to_string()].into_iter()
                     .chain(links.into_iter().map(|link| format!("<li><a href=\"{}\">{}</a></li>", link.0.0, link.1.0)))
                     .chain(["</ul></html>".to_string()])
                     .fold(None, |ac, l| Some(ac.unwrap_or("".to_string()) + &l))

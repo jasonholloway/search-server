@@ -1004,6 +1004,7 @@ version = "0.1.0"
 dependencies = [
  "ascii",
  "azure_devops_rust_api",
+ "serde_json",
  "tiny_http",
  "tokio",
  "wildflower",
