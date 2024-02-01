@@ -21,6 +21,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let azdo_pat = env::var("SEARCH_SERVER_AZDO_PAT").unwrap();
     let azdo_org = env::var("SEARCH_SERVER_AZDO_ORG").unwrap();
     let azdo_proj = env::var("SEARCH_SERVER_AZDO_PROJ").unwrap();
+    println!("Using PAT {}***", &azdo_pat[0..8]);
 
     let azdo_creds = Credential::from_pat(azdo_pat);
     let git_client = git::operations::ClientBuilder::new(azdo_creds.clone()).build();
