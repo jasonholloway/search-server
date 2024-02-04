@@ -1,11 +1,10 @@
 extern crate tiny_http;
 
 use tiny_http::{Server, Response, Header, HeaderField};
-use azure_devops_rust_api::{auth::Credential, git, pipelines};
-use std::{error::Error, str::FromStr};
+use azure_devops_rust_api::{Credential, git, pipelines};
+use std::{error::Error, future::IntoFuture, str::FromStr};
 use ascii::AsciiString;
 use wildflower::Pattern;
-use serde_json::Value;
 use std::env;
 
 struct Url(String);
@@ -24,8 +23,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     println!("Using PAT {}***", &azdo_pat[0..8]);
 
     let azdo_creds = Credential::from_pat(azdo_pat);
-    let git_client = git::operations::ClientBuilder::new(azdo_creds.clone()).build();
-    let pipeline_client = pipelines::operations::ClientBuilder::new(azdo_creds.clone()).build();
+    let git_client = git::ClientBuilder::new(azdo_creds.clone()).build();
+    let pipeline_client = pipelines::ClientBuilder::new(azdo_creds.clone()).build();
 
     println!("Listening at http://{}", addr);
 
@@ -38,40 +37,40 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     "/repos" => {
                         let pattern = Pattern::new(path_iter.next().map_or("*".to_string(), |q| format!("*{}*", q.to_lowercase().replace('+', "*"))));
 
-                        let repos = git_client
-                            .repositories()
+                        git_client
+                            .repositories_client()
                             .list(&azdo_org, &azdo_proj)
-                            .into_future().await?.value;
-
-                        repos.into_iter()
-                            .filter(|r| pattern.matches(&r.name.to_lowercase()))
-                            .flat_map(|r| {
-                                r.web_url
-                                    .map(|url| Link(Url(url), Description(format!("[{}] {}", azdo_proj, r.name))))
-                            })
-                            .collect()
+                            .into_future().await
+                            .map(|repos|
+                                repos.value.into_iter()
+                                    .filter(|r| pattern.matches(&r.name.to_lowercase()))
+                                    .flat_map(|r| {
+                                        r.web_url
+                                            .map(|url| Link(Url(url), Description(format!("[{}] {}", azdo_proj, r.name))))
+                                    })
+                                    .collect())?
                     },
                     "/pipelines" => {
                         let pattern = Pattern::new(path_iter.next().map_or("*".to_string(), |q| format!("*{}*", q.to_lowercase().replace('+', "*"))));
 
-                        let pipelines = pipeline_client
-                            .pipelines()
+                        pipeline_client
+                            .pipelines_client()
                             .list(&azdo_org, &azdo_proj)
-                            .into_future().await?.value;
+                            .into_future().await
+                            .map(|pipelines| 
+                                pipelines.value.into_iter()
+                                    .filter(|p| pattern.matches(&p.name.to_lowercase()))
+                                    .flat_map(|p| {
+                                        println!("{:?}", p.links);
 
-                        pipelines.into_iter()
-                            .filter(|p| pattern.matches(&p.name.to_lowercase()))
-                            .flat_map(|p| {
-                                println!("{}", p.links);
-                                
-                                if let Some(Value::String(url)) = p.links.get("web").and_then(|j| j.get("href")) {
-                                    Some(Link(Url(url.to_string()), Description(format!("[{}] {}\\{}", azdo_proj, p.folder, p.name).to_string())))
-                                }
-                                else {
-                                    None
-                                }
-                            })
-                            .collect()
+                                        if let Some(url) = p.links.web.map(|j| j.href) {
+                                            Some(Link(Url(url.to_string()), Description(format!("[{}] {}\\{}", azdo_proj, p.folder, p.name).to_string())))
+                                        }
+                                        else {
+                                            None
+                                        }
+                                    })
+                                    .collect())?
                     },
                     _ => vec!()
                 }
